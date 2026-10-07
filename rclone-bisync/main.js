@@ -3,6 +3,7 @@
 const { Plugin, PluginSettingTab, Setting, Notice, FileSystemAdapter } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -93,11 +94,12 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
 
   rcloneBin() {
     const p = this.settings.rclonePath.trim() || 'rclone';
-    // Obsidian keeps the PATH it was launched with, so a fresh winget install
-    // isn't visible until a reboot/relogin. Look in winget's link folder directly.
-    if (p === 'rclone' && process.platform === 'win32') {
-      const winget = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Links', 'rclone.exe');
-      if (fs.existsSync(winget)) return winget;
+    if (p !== 'rclone') return p;
+    // Obsidian's PATH is often incomplete: on Windows it misses installs made
+    // after launch, and macOS apps opened from the Dock don't see Homebrew.
+    // Check the usual install locations before falling back to PATH.
+    for (const candidate of rcloneCandidates()) {
+      if (fs.existsSync(candidate)) return candidate;
     }
     return p;
   }
@@ -167,7 +169,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
       child.stderr.on('data', grab);
       child.on('error', (e) => resolve({
         code: -1,
-        out: e.code === 'ENOENT' ? 'rclone not found. Install it, or set its full path in the plugin settings.' : String(e),
+        out: e.code === 'ENOENT' ? 'rclone not found. Install it (rclone.org/install), or set its full path in the plugin settings.' : String(e),
       }));
       child.on('close', (code) => resolve({ code, out }));
     });
@@ -279,6 +281,28 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
   }
 };
 
+function rcloneCandidates() {
+  const home = os.homedir();
+  const env = process.env;
+  if (process.platform === 'win32') {
+    return [
+      path.join(env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Links', 'rclone.exe'),
+      path.join(home, 'scoop', 'shims', 'rclone.exe'),
+      path.join(env.ProgramData || 'C:\\ProgramData', 'chocolatey', 'bin', 'rclone.exe'),
+      path.join(env.ProgramFiles || 'C:\\Program Files', 'rclone', 'rclone.exe'),
+    ];
+  }
+  return [
+    '/opt/homebrew/bin/rclone',   // Homebrew, Apple Silicon
+    '/usr/local/bin/rclone',      // Homebrew (Intel), rclone install script
+    '/usr/bin/rclone',            // Linux distro packages
+    '/snap/bin/rclone',
+    '/home/linuxbrew/.linuxbrew/bin/rclone',
+    path.join(home, '.local', 'bin', 'rclone'),
+    path.join(home, 'bin', 'rclone'),
+  ];
+}
+
 function timeAgo(ms) {
   const mins = Math.floor((Date.now() - ms) / 60000);
   if (mins < 1) return 'just now';
@@ -302,7 +326,7 @@ class RcloneBisyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('rclone executable')
-      .setDesc('"rclone" if it is on PATH or installed with winget; otherwise the full path to rclone.exe.')
+      .setDesc('Leave as "rclone" to find it automatically, or enter the full path to the rclone binary.')
       .addText((t) => t.setValue(s.rclonePath).onChange(async (v) => { s.rclonePath = v; await save(); }));
 
     new Setting(containerEl)
