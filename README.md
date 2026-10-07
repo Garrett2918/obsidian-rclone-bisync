@@ -31,9 +31,13 @@ other rclone remote works too.
 
 ## How it works
 
-**When it syncs.** At startup, every 5 minutes, and 30 seconds after you stop
-editing. You can change all three. To sync by hand, click the ribbon icon, the
-☁ item in the status bar, or run **Sync now** from the command palette.
+**When it syncs.** At startup and 30 seconds after you stop editing. If you
+haven't changed anything, it stays idle. To sync by hand, click the ribbon
+icon, the ☁ item in the status bar, or run **Sync now** from the command palette.
+
+If you edit the vault on another computer while this one has Obsidian open,
+set **Check Drive for changes** to pull those edits on a timer (15 minutes
+works well). It ships turned off.
 
 **First sync.** On each computer, the first run merges your vault with Drive
 and deletes nothing. Later runs pass deletions through.

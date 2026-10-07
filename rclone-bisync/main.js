@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS = {
   rclonePath: 'rclone',
   remote: 'gdrive',
   remoteFolder: 'Obsidian',
-  intervalMinutes: 5,
+  remoteCheckMinutes: 0,    // 0 = only sync on startup, after edits, or by hand
   syncOnStartup: true,
   syncAfterEditSeconds: 30,
   extraExcludes: '',
@@ -34,6 +34,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
     this.syncing = false;
     this.pending = false;
     this.failed = false;
+    this.dirty = false;       // local files changed since the last sync started
     this.intervalId = null;
     this.editTimer = null;
 
@@ -56,6 +57,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
       this.registerEvent(this.app.vault.on(ev, () => this.onVaultChange()));
     }
     this.registerInterval(window.setInterval(() => this.refreshStatus(), 30 * 1000));
+    this.registerInterval(window.setInterval(() => this.syncIfDirty(), 5 * 60 * 1000));
     this.scheduleInterval();
 
     this.app.workspace.onLayoutReady(() => {
@@ -70,6 +72,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    delete this.settings.intervalMinutes; // replaced by remoteCheckMinutes in 1.1.0
   }
 
   async saveSettings() {
@@ -136,20 +139,30 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
 
   // ---- triggers --------------------------------------------------------------
 
+  // Optional timed sync that pulls changes made on other devices. Off by default:
+  // without it, the plugin only syncs at startup, after local edits, or by hand.
   scheduleInterval() {
     if (this.intervalId) window.clearInterval(this.intervalId);
     this.intervalId = null;
-    const minutes = Number(this.settings.intervalMinutes);
+    const minutes = Number(this.settings.remoteCheckMinutes);
     if (minutes > 0) {
       this.intervalId = window.setInterval(() => this.sync(), minutes * 60 * 1000);
     }
   }
 
   onVaultChange() {
+    if (!this.app.workspace.layoutReady) return;
+    this.dirty = true;
     const seconds = Number(this.settings.syncAfterEditSeconds);
-    if (!this.app.workspace.layoutReady || !(seconds > 0)) return;
+    if (!(seconds > 0)) return;
     if (this.editTimer) window.clearTimeout(this.editTimer);
     this.editTimer = window.setTimeout(() => this.sync(), seconds * 1000);
+  }
+
+  // Picks up local edits the edit timer didn't sync: a failed sync, or the
+  // edit timer turned off. Does nothing when no files changed.
+  syncIfDirty() {
+    if (this.dirty && !this.syncing) this.sync();
   }
 
   // ---- sync ------------------------------------------------------------------
@@ -183,6 +196,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
     }
     if (this.editTimer) window.clearTimeout(this.editTimer);
     this.syncing = true;
+    if (!dryRun) this.dirty = false;
     this.refreshStatus();
 
     try {
@@ -235,6 +249,7 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
       }
     } catch (e) {
       this.failed = true;
+      if (!dryRun) this.dirty = true;
       console.error('[rclone-bisync]', e);
       new Notice(`Sync failed: ${e.message}`, 10000);
     } finally {
@@ -348,10 +363,10 @@ class RcloneBisyncSettingTab extends PluginSettingTab {
       }));
 
     new Setting(containerEl)
-      .setName('Auto-sync interval (minutes)')
-      .setDesc('0 turns off timed sync.')
-      .addText((t) => t.setValue(String(s.intervalMinutes)).onChange(async (v) => {
-        s.intervalMinutes = Math.max(0, Number(v) || 0);
+      .setName('Check Drive for changes (minutes)')
+      .setDesc('Sync on a timer to pull in edits from your other devices, even when nothing changed here. 0 turns it off.')
+      .addText((t) => t.setValue(String(s.remoteCheckMinutes)).onChange(async (v) => {
+        s.remoteCheckMinutes = Math.max(0, Number(v) || 0);
         await save();
         this.plugin.scheduleInterval();
       }));
