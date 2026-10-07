@@ -1,0 +1,9 @@
+{
+  "id": "rclone-bisync",
+  "name": "Rclone Bisync",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Two-way sync of this vault with Google Drive (or any rclone remote) using rclone bisync.",
+  "author": "Garrett2918",
+  "isDesktopOnly": true
+}
