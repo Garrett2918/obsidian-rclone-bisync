@@ -53,6 +53,29 @@ themes and other plugins still sync.
 
 **Safety.** rclone stops the run if it would delete more than half your files.
 
+## Using other services
+
+The plugin works with any storage rclone supports. Run `rclone config`,
+create a remote for your service, and enter its name under **Remote name**
+in the plugin settings. OneDrive, Dropbox, Box, pCloud, Nextcloud (WebDAV)
+and S3-compatible storage like Backblaze B2 all work well.
+
+**Proton Drive.** Create a remote of type `protondrive`. rclone asks for your
+username, password and a 2FA code, then saves a login session so you don't
+need a new code for each sync. Know these trade-offs first:
+
+- Proton has no public API. rclone's Proton backend is in beta and copies how
+  Proton's own apps talk to its servers, so a change on Proton's side can break
+  syncing until rclone catches up.
+- Your computer encrypts every file before upload, so syncs run slower than
+  with Google Drive.
+- If Proton ends your session (after a password change, for example), the
+  status bar shows **Sync failed**. Run `rclone config reconnect <remote>:`
+  to sign in again.
+- On Windows and macOS, Proton's official Proton Drive app can sync a vault
+  folder without this plugin. The plugin makes the most sense on Linux, where
+  Proton has no official app.
+
 ## Troubleshooting
 
 - To see what happened, run **Rclone Bisync: Open sync log**.
