@@ -288,11 +288,12 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
   refreshStatus() {
     if (!this.statusEl) return;
     let text;
-    if (this.syncing) text = 'Syncingâ€¦';
+    if (this.syncing) text = 'Syncing…';
     else if (this.failed) text = 'Sync failed';
     else if (this.settings.lastSync) text = `Synced ${timeAgo(this.settings.lastSync)}`;
     else text = 'Not synced yet';
-    this.statusEl.setText(`â˜ ${text}`);
+    // Escaped so the file stays plain ASCII and can't be mangled by editors.
+    this.statusEl.setText(`☁ ${text}`);
   }
 };
 
