@@ -19,8 +19,9 @@ other rclone remote works too.
    the install script. [rclone.org/install](https://rclone.org/install/)
    lists other options.
 2. Connect Google Drive. Open a new terminal and run `rclone config`:
-   `n` (new remote) → name **gdrive** → storage **drive** → leave client_id
-   and client_secret blank → scope **1** (full access) → accept the defaults
+   `n` (new remote) → name **gdrive** → storage **drive** → paste your
+   client_id and client_secret ([how to get them](#google-client-id-recommended),
+   or leave both blank) → scope **1** (full access) → accept the defaults
    → **y** for auto config. Sign in to Google in the browser window rclone opens.
 3. Copy the `rclone-bisync` folder into `<your vault>/.obsidian/plugins/`.
    Repeat for each vault you want to sync.
@@ -28,6 +29,41 @@ other rclone remote works too.
 4. In Obsidian, open **Settings → Community plugins**, turn off Restricted
    mode if it's on, and enable **Rclone Bisync**.
 5. In the plugin settings, click **Test connection**, then **Dry run**, then **Sync**.
+
+## Google client ID (recommended)
+
+If you leave client_id blank, rclone signs in through its built-in Google
+app. Every rclone user shares that app's speed limit, so large syncs can stall
+with "rate limit exceeded" errors. Your own client ID takes about ten minutes
+to set up and costs nothing.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
+   create a project. Any name works.
+2. Open **APIs & Services → Library**, search for **Google Drive API**, and
+   click **Enable**.
+3. Open **Google Auth Platform** (called **OAuth consent screen** in older
+   versions of the console). Pick **External**, give the app a name, and enter
+   your email where it asks.
+4. Under **Audience**, click **Publish app**. Skip this and Google signs
+   rclone out every 7 days with an `invalid_grant` error. You don't need
+   Google's verification for personal use.
+5. Under **Clients**, create a client of type **Desktop app**. Copy the
+   Client ID and Client secret into `rclone config`.
+
+When you sign in, Google warns that it hasn't verified the app. You built the
+app yourself, so click **Advanced → Go to (app name)**.
+
+Already set up rclone without one? Add it to your existing remote and sign
+in again:
+
+```
+rclone config update gdrive client_id=YOUR_ID client_secret=YOUR_SECRET
+rclone config reconnect gdrive:
+```
+
+rclone keeps the ID, secret and login in its own config file (`rclone config file`
+prints the path). Keep that file out of your vault and out of git, since it
+grants full access to your Drive.
 
 ## How it works
 
