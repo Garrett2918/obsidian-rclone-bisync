@@ -23,9 +23,12 @@ other rclone remote works too.
    client_id and client_secret ([how to get them](#google-client-id-recommended),
    or leave both blank) → scope **1** (full access) → accept the defaults
    → **y** for auto config. Sign in to Google in the browser window rclone opens.
-3. Copy the `rclone-bisync` folder into `<your vault>/.obsidian/plugins/`.
-   Repeat for each vault you want to sync.
-   On macOS, `.obsidian` is hidden in Finder. Press Cmd+Shift+. to show it.
+3. Install the plugin. Once it's listed, search for **Rclone Bisync** under
+   **Settings → Community plugins → Browse**. To install by hand, download
+   `main.js` and `manifest.json` from the
+   [latest release](https://github.com/Garrett2918/obsidian-rclone-bisync/releases/latest)
+   into `<your vault>/.obsidian/plugins/rclone-bisync/`. On macOS, `.obsidian`
+   is hidden in Finder. Press Cmd+Shift+. to show it.
 4. In Obsidian, open **Settings → Community plugins**, turn off Restricted
    mode if it's on, and enable **Rclone Bisync**.
 5. In the plugin settings, click **Test connection**, then **Dry run**, then **Sync**.
@@ -111,6 +114,18 @@ need a new code for each sync. Know these trade-offs first:
 - On Windows and macOS, Proton's official Proton Drive app can sync a vault
   folder without this plugin. The plugin makes the most sense on Linux, where
   Proton has no official app.
+
+## Disclosures
+
+- **External program.** The plugin runs the `rclone` program installed on
+  your computer. It doesn't download or bundle rclone.
+- **Network use.** rclone uploads your vault's files to the remote you
+  configure (Google Drive by default) and downloads changes from it. The
+  plugin sends nothing anywhere else and has no telemetry.
+- **Accounts.** You need an account with your storage service. Your login
+  stays in rclone's own config file. The plugin never reads it.
+- **Files outside the vault.** The plugin reads rclone's location from your
+  system, and rclone keeps its sync state in its own cache folder.
 
 ## Troubleshooting
 
