@@ -1,0 +1,43 @@
+name: Release
+
+# Push a tag that matches manifest.json's version (e.g. 1.1.2) to publish a release.
+# The assets are attested so users can verify they came from this repository.
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check tag matches manifest version
+        run: |
+          version=$(jq -r .version manifest.json)
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest.json version $version"
+            exit 1
+          fi
+          jq -e --arg v "$version" 'has($v)' versions.json > /dev/null \
+            || { echo "versions.json has no entry for $version"; exit 1; }
+
+      - name: Attest release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json \
+            --title "$GITHUB_REF_NAME" --generate-notes
