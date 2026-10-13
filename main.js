@@ -1,7 +1,7 @@
 'use strict';
 
 const { Plugin, PluginSettingTab, Setting, Notice, FileSystemAdapter } = require('obsidian');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -21,6 +21,13 @@ const DEFAULT_SETTINGS = {
 };
 
 const MAX_LOG_BYTES = 1024 * 1024;
+
+// The Flatpak build of Obsidian runs in a sandbox with its own /usr, so it
+// can't see an rclone installed on the system.
+const IN_FLATPAK = process.platform === 'linux' && fs.existsSync('/.flatpak-info');
+const FLATPAK_HINT = 'Obsidian is running as a Flatpak and can\'t see your system\'s rclone. '
+  + 'Either run "flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian" '
+  + 'and restart Obsidian, or put the rclone binary from rclone.org/downloads in ~/.local/bin.';
 
 module.exports = class RcloneBisyncPlugin extends Plugin {
   async onload() {
@@ -96,15 +103,29 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
   }
 
   rcloneBin() {
-    const p = this.settings.rclonePath.trim() || 'rclone';
+    // Paths pasted from `which`/`where` may carry quotes or a leading ~.
+    let p = this.settings.rclonePath.trim().replace(/^(["'])(.*)\1$/, '$2') || 'rclone';
+    if (p === '~' || p.startsWith('~/')) p = path.join(os.homedir(), p.slice(1));
     if (p !== 'rclone') return p;
     // Obsidian's PATH is often incomplete: on Windows it misses installs made
-    // after launch, and macOS apps opened from the Dock don't see Homebrew.
-    // Check the usual install locations before falling back to PATH.
+    // after launch, and macOS/Linux apps opened from the Dock or a launcher
+    // don't see PATH changes made in shell profiles. Check the usual install
+    // locations, then ask the login shell, before falling back to PATH.
     for (const candidate of rcloneCandidates()) {
       if (fs.existsSync(candidate)) return candidate;
     }
-    return p;
+    return (!IN_FLATPAK && loginShellRclone()) || p;
+  }
+
+  // The program and leading arguments that start rclone. In a Flatpak that may
+  // talk to the host, rclone runs outside the sandbox through flatpak-spawn,
+  // with the system's PATH, config and cache.
+  rcloneCommand() {
+    if (IN_FLATPAK && flatpakHostAccess()) {
+      const p = this.settings.rclonePath.trim().replace(/^(["'])(.*)\1$/, '$2') || 'rclone';
+      return ['flatpak-spawn', ['--host', p.startsWith('~/') ? path.join(os.homedir(), p.slice(1)) : p]];
+    }
+    return [this.rcloneBin(), []];
   }
 
   buildFilters() {
@@ -171,8 +192,10 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
     return new Promise((resolve) => {
       let out = '';
       let child;
+      const [cmd, pre] = this.rcloneCommand();
+      const host = cmd === 'flatpak-spawn';
       try {
-        child = spawn(this.rcloneBin(), args, { windowsHide: true });
+        child = spawn(cmd, [...pre, ...args], { windowsHide: true, env: rcloneEnv(host) });
       } catch (e) {
         resolve({ code: -1, out: String(e) });
         return;
@@ -182,9 +205,16 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
       child.stderr.on('data', grab);
       child.on('error', (e) => resolve({
         code: -1,
-        out: e.code === 'ENOENT' ? 'rclone not found. Install it (rclone.org/install), or set its full path in the plugin settings.' : String(e),
+        out: e.code === 'ENOENT' ? notFoundMessage() : String(e),
       }));
-      child.on('close', (code) => resolve({ code, out }));
+      child.on('close', (code) => {
+        // flatpak-spawn reports a missing host command itself.
+        if (host && code !== 0 && /Failed to start command|No such file or directory/.test(out)) {
+          resolve({ code: -1, out: 'rclone not found on the host. Install it (rclone.org/install), or set its full path in the plugin settings.' });
+        } else {
+          resolve({ code, out });
+        }
+      });
     });
   }
 
@@ -311,12 +341,60 @@ function rcloneCandidates() {
   return [
     '/opt/homebrew/bin/rclone',   // Homebrew, Apple Silicon
     '/usr/local/bin/rclone',      // Homebrew (Intel), rclone install script
+    '/opt/local/bin/rclone',      // MacPorts
     '/usr/bin/rclone',            // Linux distro packages
     '/snap/bin/rclone',
     '/home/linuxbrew/.linuxbrew/bin/rclone',
+    path.join(home, '.nix-profile', 'bin', 'rclone'),
+    '/run/current-system/sw/bin/rclone', // NixOS
     path.join(home, '.local', 'bin', 'rclone'),
     path.join(home, 'bin', 'rclone'),
+    path.join(home, 'go', 'bin', 'rclone'), // go install
   ];
+}
+
+function notFoundMessage() {
+  if (IN_FLATPAK) return `rclone not found. ${FLATPAK_HINT}`;
+  return 'rclone not found. Install it (rclone.org/install), or set its full path in the plugin settings.';
+}
+
+// Whether the Flatpak sandbox may run commands on the host (flatpak-spawn --host).
+function flatpakHostAccess() {
+  try {
+    return /^org\.freedesktop\.Flatpak=(talk|own)\s*$/m.test(fs.readFileSync('/.flatpak-info', 'utf8'));
+  } catch (e) {
+    return false;
+  }
+}
+
+// Inside the sandbox, XDG_CONFIG_HOME points into ~/.var/app, so an rclone
+// run there would miss the config made by `rclone config` on the system.
+function rcloneEnv(host) {
+  const env = Object.assign({}, process.env);
+  if (IN_FLATPAK && !host && !env.RCLONE_CONFIG) {
+    const conf = path.join(os.homedir(), '.config', 'rclone', 'rclone.conf');
+    if (fs.existsSync(conf)) env.RCLONE_CONFIG = conf;
+  }
+  return env;
+}
+
+// macOS and Linux only: look rclone up through the user's login shell, which
+// loads the PATH set in ~/.zprofile, ~/.bash_profile and similar. Only a
+// successful lookup is cached, so installing rclone later still gets found.
+let shellRclone = null;
+function loginShellRclone() {
+  if (process.platform === 'win32') return null;
+  if (shellRclone) return shellRclone;
+  try {
+    const shell = process.env.SHELL || '/bin/sh';
+    const out = execFileSync(shell, ['-lc', 'command -v rclone'], { encoding: 'utf8', timeout: 5000 });
+    // Profiles can print banners; the path is the last line.
+    const found = out.trim().split('\n').pop().trim();
+    if (path.isAbsolute(found) && fs.existsSync(found)) shellRclone = found;
+  } catch (e) {
+    // Not installed, or the shell failed; fall back to PATH.
+  }
+  return shellRclone;
 }
 
 function timeAgo(ms) {
