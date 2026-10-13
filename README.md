@@ -134,7 +134,10 @@ need a new code for each sync. Know these trade-offs first:
 - If you see "rclone not found", run `which rclone` (macOS/Linux) or
   `where rclone` (Windows) and paste the result into the plugin settings.
   The plugin checks the usual install folders for winget, Scoop, Chocolatey,
-  Homebrew, snap and the rclone script on its own.
+  Homebrew, MacPorts, Nix, snap and the rclone script on its own. On macOS
+  and Linux it also asks your login shell, so a PATH set in `~/.zprofile` or
+  `~/.bash_profile` works even when Obsidian is opened from the Dock or a
+  launcher.
 - The Flatpak build of Obsidian runs in a sandbox and can't start rclone.
   On Linux, use the AppImage or .deb build instead.
 - Closing Obsidian doesn't trigger a final sync. Edits you make right before

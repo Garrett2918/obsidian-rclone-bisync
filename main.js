@@ -1,7 +1,7 @@
 'use strict';
 
 const { Plugin, PluginSettingTab, Setting, Notice, FileSystemAdapter } = require('obsidian');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -96,15 +96,18 @@ module.exports = class RcloneBisyncPlugin extends Plugin {
   }
 
   rcloneBin() {
-    const p = this.settings.rclonePath.trim() || 'rclone';
+    // Paths pasted from `which`/`where` may carry quotes or a leading ~.
+    let p = this.settings.rclonePath.trim().replace(/^(["'])(.*)\1$/, '$2') || 'rclone';
+    if (p === '~' || p.startsWith('~/')) p = path.join(os.homedir(), p.slice(1));
     if (p !== 'rclone') return p;
     // Obsidian's PATH is often incomplete: on Windows it misses installs made
-    // after launch, and macOS apps opened from the Dock don't see Homebrew.
-    // Check the usual install locations before falling back to PATH.
+    // after launch, and macOS/Linux apps opened from the Dock or a launcher
+    // don't see PATH changes made in shell profiles. Check the usual install
+    // locations, then ask the login shell, before falling back to PATH.
     for (const candidate of rcloneCandidates()) {
       if (fs.existsSync(candidate)) return candidate;
     }
-    return p;
+    return loginShellRclone() || p;
   }
 
   buildFilters() {
@@ -311,12 +314,35 @@ function rcloneCandidates() {
   return [
     '/opt/homebrew/bin/rclone',   // Homebrew, Apple Silicon
     '/usr/local/bin/rclone',      // Homebrew (Intel), rclone install script
+    '/opt/local/bin/rclone',      // MacPorts
     '/usr/bin/rclone',            // Linux distro packages
     '/snap/bin/rclone',
     '/home/linuxbrew/.linuxbrew/bin/rclone',
+    path.join(home, '.nix-profile', 'bin', 'rclone'),
+    '/run/current-system/sw/bin/rclone', // NixOS
     path.join(home, '.local', 'bin', 'rclone'),
     path.join(home, 'bin', 'rclone'),
+    path.join(home, 'go', 'bin', 'rclone'), // go install
   ];
+}
+
+// macOS and Linux only: look rclone up through the user's login shell, which
+// loads the PATH set in ~/.zprofile, ~/.bash_profile and similar. Only a
+// successful lookup is cached, so installing rclone later still gets found.
+let shellRclone = null;
+function loginShellRclone() {
+  if (process.platform === 'win32') return null;
+  if (shellRclone) return shellRclone;
+  try {
+    const shell = process.env.SHELL || '/bin/sh';
+    const out = execFileSync(shell, ['-lc', 'command -v rclone'], { encoding: 'utf8', timeout: 5000 });
+    // Profiles can print banners; the path is the last line.
+    const found = out.trim().split('\n').pop().trim();
+    if (path.isAbsolute(found) && fs.existsSync(found)) shellRclone = found;
+  } catch (e) {
+    // Not installed, or the shell failed; fall back to PATH.
+  }
+  return shellRclone;
 }
 
 function timeAgo(ms) {
