@@ -138,8 +138,19 @@ need a new code for each sync. Know these trade-offs first:
   and Linux it also asks your login shell, so a PATH set in `~/.zprofile` or
   `~/.bash_profile` works even when Obsidian is opened from the Dock or a
   launcher.
-- The Flatpak build of Obsidian runs in a sandbox and can't start rclone.
-  On Linux, use the AppImage or .deb build instead.
+- The Flatpak build of Obsidian runs in a sandbox that can't see the rclone
+  installed on your system. Pick one fix:
+  - Let Obsidian run rclone outside the sandbox, then restart Obsidian. This
+    also lets Obsidian and its plugins run any other program on your computer.
+
+    ```
+    flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian
+    ```
+  - Or download the rclone zip from [rclone.org/downloads](https://rclone.org/downloads/)
+    and put the `rclone` binary in `~/.local/bin`. The plugin finds it there
+    and uses your existing `~/.config/rclone/rclone.conf`.
+
+  The AppImage and .deb builds of Obsidian need neither.
 - Closing Obsidian doesn't trigger a final sync. Edits you make right before
   closing go up the next time you open it.
 
